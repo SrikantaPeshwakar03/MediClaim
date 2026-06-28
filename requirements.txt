@@ -26,7 +26,6 @@ opencv-python-headless==4.10.0.84
 
 # Database
 supabase==2.9.0
-postgrest==0.18.0
 
 # Utilities
 python-dotenv==1.0.1
