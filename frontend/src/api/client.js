@@ -29,6 +29,10 @@ function normalizeBaseUrl(rawUrl) {
 
 const API_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_URL);
 
+// Diagnostic: surfaces exactly which base URL the live bundle resolved to.
+// If this log is absent in the browser console, you are running a stale build.
+console.info('[MediClaim] API base URL:', API_BASE_URL, '| raw VITE_API_URL:', import.meta.env.VITE_API_URL);
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
