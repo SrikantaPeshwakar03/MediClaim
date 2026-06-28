@@ -6,8 +6,10 @@ All environment variables are validated and type-checked.
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import model_validator
 from typing import Optional
 from pathlib import Path
+import json
 
 
 class Settings(BaseSettings):
@@ -21,7 +23,27 @@ class Settings(BaseSettings):
     
     # === API ===
     API_V1_PREFIX: str = "/api/v1"
+
+    # Allowed CORS origins. Set CORS_ORIGINS as a comma-separated string (or a
+    # JSON array) in your environment, e.g. on Railway:
+    #   CORS_ORIGINS="https://my-frontend.up.railway.app,http://localhost:5173"
+    # It is parsed into BACKEND_CORS_ORIGINS below. Kept as a separate plain
+    # string field so pydantic-settings does not try to JSON-decode it.
+    CORS_ORIGINS: Optional[str] = None
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+
+    @model_validator(mode="after")
+    def _apply_cors_origins(self):
+        """Build BACKEND_CORS_ORIGINS from the CORS_ORIGINS env string if provided."""
+        if self.CORS_ORIGINS:
+            raw = self.CORS_ORIGINS.strip()
+            if raw.startswith("["):
+                self.BACKEND_CORS_ORIGINS = json.loads(raw)
+            else:
+                self.BACKEND_CORS_ORIGINS = [
+                    origin.strip() for origin in raw.split(",") if origin.strip()
+                ]
+        return self
     
     # === Supabase ===
     SUPABASE_URL: str
