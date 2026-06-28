@@ -8,7 +8,7 @@ python-multipart==0.0.12
 # Agent Framework
 langgraph==0.2.45
 langchain==0.3.7
-langchain-core==0.3.15
+langchain-core==0.3.17
 langchain-community==0.3.5
 
 # LLM Providers - Multiple options
