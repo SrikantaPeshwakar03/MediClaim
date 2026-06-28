@@ -1,0 +1,10 @@
+# Nixpacks build configuration for the MediClaim backend.
+#
+# PaddleOCR pulls in the full opencv-python (transitively), whose `cv2` module
+# requires the system OpenGL/GLib shared libraries. These are not present in the
+# default Nixpacks image, which causes:
+#   ImportError: libGL.so.1: cannot open shared object file
+# Installing libgl1 (provides libGL.so.1) and libglib2.0-0 (provides
+# libgthread-2.0.so.0) at build time fixes the import.
+[phases.setup]
+aptPkgs = ["...", "libgl1", "libglib2.0-0"]
