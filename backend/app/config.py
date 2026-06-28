@@ -74,6 +74,17 @@ class Settings(BaseSettings):
     PADDLEOCR_USE_ANGLE_CLS: bool = True
     PADDLEOCR_USE_GPU: bool = False
     OCR_CONFIDENCE_THRESHOLD: float = 0.5
+
+    # Memory-tuning knobs (important for small cloud instances such as Railway).
+    # PaddlePaddle/OpenCV can spike RAM and get OOM-killed during inference.
+    # - CPU_THREADS=1 keeps Paddle's thread pool (and its buffers) small.
+    # - ENABLE_MKLDNN=False avoids large MKLDNN scratch allocations.
+    # - DET_LIMIT_SIDE_LEN caps the detector's internal image size.
+    # - MAX_IMAGE_DIM downsizes very large source images before processing.
+    PADDLEOCR_CPU_THREADS: int = 1
+    PADDLEOCR_ENABLE_MKLDNN: bool = False
+    PADDLEOCR_DET_LIMIT_SIDE_LEN: int = 736
+    OCR_MAX_IMAGE_DIM: int = 1600
     
     # === Policy ===
     POLICY_FILE_PATH: str = "policy_terms.json"

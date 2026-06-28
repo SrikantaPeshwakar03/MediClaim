@@ -7,9 +7,17 @@ Handles quality checks, preprocessing, and field extraction.
 
 import cv2
 import numpy as np
+import gc
 from typing import Optional, Dict, Any, List, Tuple
 from pathlib import Path
 from PIL import Image
+
+# Keep OpenCV from spawning many threads (each costs memory); important on
+# small cloud instances to avoid OOM kills.
+try:
+    cv2.setNumThreads(1)
+except Exception:
+    pass
 
 from ..config import settings
 from ..models import (
@@ -44,6 +52,9 @@ class OCRService:
                 use_angle_cls=settings.PADDLEOCR_USE_ANGLE_CLS,
                 lang=settings.PADDLEOCR_LANG,
                 use_gpu=settings.PADDLEOCR_USE_GPU,
+                enable_mkldnn=settings.PADDLEOCR_ENABLE_MKLDNN,
+                cpu_threads=settings.PADDLEOCR_CPU_THREADS,
+                det_limit_side_len=settings.PADDLEOCR_DET_LIMIT_SIDE_LEN,
                 show_log=False  # Suppress verbose logs
             )
             
@@ -101,17 +112,34 @@ class OCRService:
 
         return images
 
+    def _downscale_if_large(self, img: np.ndarray) -> np.ndarray:
+        """Downscale an image so its largest side <= OCR_MAX_IMAGE_DIM.
+
+        Large source images are the main driver of OCR memory spikes. Capping
+        the dimension keeps peak RAM bounded without materially hurting OCR
+        accuracy for documents.
+        """
+        max_dim = settings.OCR_MAX_IMAGE_DIM
+        if max_dim and img is not None:
+            h, w = img.shape[:2]
+            longest = max(h, w)
+            if longest > max_dim:
+                scale = max_dim / float(longest)
+                new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+                img = cv2.resize(img, new_size, interpolation=cv2.INTER_AREA)
+        return img
+
     def _read_image(self, image_path: str) -> np.ndarray:
         """Read an image OR the first page of a PDF as an OpenCV image."""
         if self._is_pdf(image_path):
             pages = self._pdf_to_images(image_path)
             if not pages:
                 raise OCRExtractionError(f"PDF has no pages: {image_path}")
-            return pages[0]
+            return self._downscale_if_large(pages[0])
         img = cv2.imread(image_path)
         if img is None:
             raise OCRExtractionError(f"Failed to read image: {image_path}")
-        return img
+        return self._downscale_if_large(img)
 
     def render_document_to_images(self, file_path: str) -> List[bytes]:
         """
@@ -202,13 +230,16 @@ class OCRService:
             all_confidences: List[float] = []
 
             for page_num, img in enumerate(page_images, start=1):
+                img = self._downscale_if_large(img)
                 result = self._ocr_engine.ocr(img, cls=True)
-                if not result or not result[0]:
-                    continue
-                for line in result[0]:
-                    if line and len(line) >= 2:
-                        all_lines.append(line[1][0])      # text
-                        all_confidences.append(line[1][1])  # confidence
+                if result and result[0]:
+                    for line in result[0]:
+                        if line and len(line) >= 2:
+                            all_lines.append(line[1][0])      # text
+                            all_confidences.append(line[1][1])  # confidence
+                # Release per-page buffers promptly to keep peak memory low.
+                del img, result
+                gc.collect()
 
             if not all_lines:
                 logger.warning(f"No text detected in document: {image_path}")
