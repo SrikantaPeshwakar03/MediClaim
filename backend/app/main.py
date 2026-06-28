@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+import asyncio
 import time
 
 from .config import settings
@@ -25,26 +26,32 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info(f"API prefix: {settings.API_V1_PREFIX}")
     logger.info(f"Debug mode: {settings.DEBUG}")
-    
-    # Pre-load services (singleton initialization)
-    try:
-        from .services import get_policy_engine, get_ocr_service, get_llm_service
-        from .agents.orchestrator import get_orchestrator
-        
-        logger.info("Initializing services...")
-        get_policy_engine()
-        get_ocr_service()
-        get_llm_service()
-        get_orchestrator()
-        logger.info("All services initialized successfully")
-        
-    except Exception as e:
-        logger.error(f"Service initialization error: {e}")
-        # Continue anyway - errors will be caught during request handling
-    
+
+    # Warm up the heavy singletons (PaddleOCR, LLM, orchestrator) in the
+    # background. This MUST NOT block startup: the server needs to start
+    # accepting connections immediately so the platform health check passes
+    # while PaddleOCR downloads/loads its models. If warm-up fails, the
+    # services still initialize lazily on the first request.
+    async def _warmup_services():
+        try:
+            from .services import get_policy_engine, get_ocr_service, get_llm_service
+            from .agents.orchestrator import get_orchestrator
+
+            logger.info("Warming up services in background...")
+            await asyncio.to_thread(get_policy_engine)
+            await asyncio.to_thread(get_ocr_service)
+            await asyncio.to_thread(get_llm_service)
+            await asyncio.to_thread(get_orchestrator)
+            logger.info("All services initialized successfully")
+        except Exception as e:
+            logger.error(f"Service warm-up error (will init lazily on first request): {e}")
+
+    warmup_task = asyncio.create_task(_warmup_services())
+
     yield
-    
+
     # Shutdown
+    warmup_task.cancel()
     logger.info("Shutting down application")
 
 
