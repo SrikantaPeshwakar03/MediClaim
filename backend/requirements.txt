@@ -18,11 +18,13 @@ langchain-google-genai==2.0.4
 langchain-ollama==0.2.0
 langchain-anthropic==0.2.4
 
-# OCR - PaddlePaddle
-paddlepaddle==3.3.1
-paddleocr==2.9.1
+# OCR - RapidOCR (PP-OCR models on ONNXRuntime: lightweight, CPU-friendly,
+# far lower RAM than paddlepaddle). The unified 'rapidocr' package supports
+# Python 3.13 and needs the onnxruntime engine installed alongside it.
+rapidocr==3.9.0
+onnxruntime==1.27.0
+pypdfium2==5.10.1
 pillow==11.0.0
-opencv-python-headless==4.10.0.84
 
 # Database
 supabase==2.9.0

@@ -66,9 +66,9 @@ def configure_logging():
     logging.getLogger("uvicorn").setLevel(logging.INFO)
     logging.getLogger("fastapi").setLevel(logging.INFO)
     
-    # Configure PaddleOCR and related libraries
-    logging.getLogger("ppocr").setLevel(logging.WARNING)
-    logging.getLogger("paddle").setLevel(logging.WARNING)
+    # Quiet down the OCR stack (RapidOCR / ONNXRuntime)
+    logging.getLogger("RapidOCR").setLevel(logging.WARNING)
+    logging.getLogger("onnxruntime").setLevel(logging.WARNING)
     
     # Configure LangChain/LangGraph
     logging.getLogger("langchain").setLevel(logging.WARNING)

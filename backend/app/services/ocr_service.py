@@ -1,8 +1,14 @@
 """
 OCR Service
 
-Extracts text from medical documents using PaddleOCR and structures it using LLM.
-Handles quality checks, preprocessing, and field extraction.
+Extracts text from medical documents using RapidOCR (PP-OCR models running on
+ONNXRuntime) and structures it using an LLM. Handles quality checks,
+preprocessing, and field extraction.
+
+RapidOCR is used instead of PaddleOCR because it runs the same detection and
+recognition models on ONNXRuntime, with a tiny bundled model set and a much
+lower memory footprint. This avoids the OOM kills that the heavyweight
+``paddlepaddle`` runtime caused on small cloud instances.
 """
 
 import cv2
@@ -35,8 +41,9 @@ from ..loggers import logger
 class OCRService:
     """
     Service for OCR extraction from medical documents.
-    
-    Uses PaddleOCR for text extraction and quality assessment.
+
+    Uses RapidOCR (PP-OCR models on ONNXRuntime) for text extraction and
+    quality assessment.
     """
     
     def __init__(self):
@@ -44,30 +51,32 @@ class OCRService:
         self._initialize_ocr()
     
     def _initialize_ocr(self):
-        """Initialize PaddleOCR engine"""
+        """Initialize the RapidOCR engine (ONNXRuntime backend).
+
+        RapidOCR ships the PP-OCR detection/recognition/classification models and
+        runs them on ONNXRuntime instead of the heavyweight ``paddlepaddle``
+        runtime. The models are small and peak RAM stays low — the key reason for
+        switching away from paddlepaddle on memory-constrained hosts.
+
+        The unified ``rapidocr`` package supports Python 3.13 (unlike
+        ``rapidocr_onnxruntime``, which is capped at <3.13) but requires the
+        ``onnxruntime`` engine to be installed separately.
+        """
         try:
-            from paddleocr import PaddleOCR
-            
-            self._ocr_engine = PaddleOCR(
-                use_angle_cls=settings.PADDLEOCR_USE_ANGLE_CLS,
-                lang=settings.PADDLEOCR_LANG,
-                use_gpu=settings.PADDLEOCR_USE_GPU,
-                enable_mkldnn=settings.PADDLEOCR_ENABLE_MKLDNN,
-                cpu_threads=settings.PADDLEOCR_CPU_THREADS,
-                det_limit_side_len=settings.PADDLEOCR_DET_LIMIT_SIDE_LEN,
-                show_log=False  # Suppress verbose logs
-            )
-            
-            logger.info("PaddleOCR initialized successfully")
-            
+            from rapidocr import RapidOCR
+
+            self._ocr_engine = RapidOCR()
+
+            logger.info("RapidOCR (ONNXRuntime) initialized successfully")
+
         except ImportError as e:
-            logger.error(f"PaddleOCR not installed: {e}")
+            logger.error(f"RapidOCR not installed: {e}")
             raise OCRExtractionError(
-                "PaddleOCR not available. Please install paddleocr.",
+                "RapidOCR not available. Please install 'rapidocr' and 'onnxruntime'.",
                 details={"error": str(e)}
             )
         except Exception as e:
-            logger.error(f"Failed to initialize PaddleOCR: {e}")
+            logger.error(f"Failed to initialize RapidOCR: {e}")
             raise OCRExtractionError(
                 f"OCR initialization failed: {e}",
                 details={"error": str(e)}
@@ -201,7 +210,7 @@ class OCRService:
         preprocess: bool = True
     ) -> Tuple[str, float, List[str]]:
         """
-        Extract text from image using PaddleOCR.
+        Extract text from image using RapidOCR.
         
         Args:
             image_path: Path to image file
@@ -231,14 +240,19 @@ class OCRService:
 
             for page_num, img in enumerate(page_images, start=1):
                 img = self._downscale_if_large(img)
-                result = self._ocr_engine.ocr(img, cls=True)
-                if result and result[0]:
-                    for line in result[0]:
-                        if line and len(line) >= 2:
-                            all_lines.append(line[1][0])      # text
-                            all_confidences.append(line[1][1])  # confidence
+                # RapidOCR is callable and returns a RapidOCROutput whose `txts`
+                # and `scores` are parallel sequences (both None when nothing is
+                # detected).
+                out = self._ocr_engine(img)
+                txts = getattr(out, "txts", None) if out is not None else None
+                scores = getattr(out, "scores", None) if out is not None else None
+                if txts:
+                    for i, txt in enumerate(txts):
+                        all_lines.append(txt)
+                        conf = scores[i] if (scores is not None and i < len(scores)) else 0.0
+                        all_confidences.append(float(conf))
                 # Release per-page buffers promptly to keep peak memory low.
-                del img, result
+                del img, out
                 gc.collect()
 
             if not all_lines:
