@@ -16,6 +16,79 @@ The platform combines deterministic business rules with AI-based document unders
 
 ---
 
+## Setup & Installation
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+ and npm
+- A Supabase project (URL + service-role key) for persistence and document storage
+- An LLM API key for your chosen provider (OpenRouter, OpenAI, Anthropic, or Gemini). Not required if you run a local model via Ollama.
+
+### 1. Clone and configure environment
+
+```bash
+git clone https://github.com/SrikantaPeshwakar03/MediClaim.git
+cd MediClaim
+
+# Create your environment file from the template
+cp .env.example .env
+```
+
+Open `.env` and fill in your values. At minimum set:
+
+- `SUPABASE_URL`, `SUPABASE_KEY` — Supabase project URL and service-role key
+- `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL` — your LLM provider settings
+- `LLM_VISION_MODEL` (optional) — enables image-based extraction for handwritten/messy documents
+
+The backend reads `.env` from the project root, so this single file configures the whole app.
+
+### 2. Backend setup (FastAPI)
+
+```bash
+# From the project root — create and activate a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+(One-time Supabase setup) Create the database tables and storage bucket using the provided schema in `backend/data/supabase_schema.sql`.
+
+Run the API server:
+
+```bash
+cd backend
+uvicorn app.main:app --reload --port 8000
+```
+
+The API is now available at `http://localhost:8000`, with interactive docs at `http://localhost:8000/docs`.
+
+> Note: On the first request, OCR models download and load, so the very first claim may take longer to process.
+
+### 3. Frontend setup (React + Vite)
+
+In a separate terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The UI runs at `http://localhost:5173` and proxies `/api` requests to the backend on port 8000.
+
+### 4. Running tests (optional)
+
+```bash
+# From the project root, with the virtual environment active
+pip install -r requirements.txt   # includes pytest and dev tools
+pytest
+```
+
+---
+
 ## Problem Statement
 
 Traditional medical claim processing is slow because every submitted claim must be manually reviewed.
